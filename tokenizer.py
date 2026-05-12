@@ -8,19 +8,20 @@ import json
 # frequent pairings produce suboptimal behaviour, look at the regex line in the original gpt-2 bpe code
 class Tokenizer:
 
-    def __init__(self, dataset, vocab_size):
-        with open(dataset, "r", encoding="utf-8") as file:
-            self.dataset = list(file.read().encode("utf-8"))
+    def __init__(self, vocab_size = 1000):
         self.vocab_size = vocab_size
         self.merges = {}
 
 
 
-    def train(self):
+    def train(self, dataset_path):
+        with open(dataset_path, "r", encoding="utf-8") as file:
+            dataset = list(file.read().encode("utf-8"))
+
         tokens = 256
         while (tokens < self.vocab_size):
             counts = {}
-            for a, b in zip(self.dataset, self.dataset[1:]):
+            for a, b in zip(dataset, dataset[1:]):
                 pair = (a, b)
                 counts[pair] = counts.get(pair, 0) + 1
 
@@ -28,7 +29,7 @@ class Tokenizer:
             self.merges[to_merge] = tokens
             print(f"merged {to_merge} as token number {tokens}")
 
-            self.dataset = self._merge(self.dataset, to_merge, tokens)
+            dataset = self._merge(dataset, to_merge, tokens)
             tokens += 1
 
     
@@ -45,7 +46,7 @@ class Tokenizer:
 
             pair_to_merge = min(appearences, key=lambda p: self.merges.get(p, float("inf")))
             if pair_to_merge not in self.merges:
-                # everything is tokenized to the fullest extent,
+                # everything is tokenized to the fullest extent
                 break
             idx = self.merges[pair_to_merge]
             tokens = self._merge(tokens, pair_to_merge, idx)
@@ -90,14 +91,4 @@ class Tokenizer:
         return new_ids
 
 
-if __name__ == "__main__":
-    tokenizer = Tokenizer("./the_genealogy_of_morals.txt", 300)
-    # tokenizer.train()
-    # tokenizer.save("./merges.json")
-    # tokenizer.load("./merges.json")
-
-    # with open("./beyond_good_and_evil.txt", "r", encoding="utf-8") as file:
-    #     new_text = tokenizer.encode(file.read())
-
-    # print(new_text)
                 

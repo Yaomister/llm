@@ -84,8 +84,32 @@ class GPT(nn.Module):
             wpe = nn.Embedding(config.block_size, config.d_model),
             heads = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
             ln_f = nn.LayerNorm(config.d_model)
-        )
-        )
+        ))
+        self.ln_head = nn.Linear(config.d_model, config.d_model)
+
+    def forward(self, x, target = None):
+        batch, sequence = x.size()
+        assert sequence < self.config.block_size
+        pos = torch.arange(0, sequence, dtype=torch.long, device=x.device)
+        position_embedding = self.transformer.wpe(pos)
+        token_embedding = self.transformer.wte(x)
+
+        x = token_embedding + position_embedding 
+
+        for head in self.transformer.heads:
+            x = head.forward(x)
+
+        x = self.transformer.ln_f(x)
+
+        logit = self.ln_head(x)
+
+        loss = None
+
+        if target is not None:
+            loss = F.cross_entropy(logit.view(-1, logit.size(01)), target.view(-1))
+            
+        return logit, loss
+
 
 
 
