@@ -128,6 +128,33 @@ class GPT(nn.Module):
         # iterate over the submodule and apply weight initialization
         self.apply(self._initialize_weights)
 
+    def configure_optimizer(self, weight_decay, learning_rate):
+        """
+        add weight decay to 2D tensors. We want the weights to be trained in such a way that it uses many input features weakly rather than a single input feature strongly.
+        there's no point in adding weight decay to 1D tensors because they're just biases.
+        """
+        params = {pn: p for pn, p in self.named_parameters() if p.requires_grad}
+
+        params_with_decay = [p for _, p in params.items() if p.dim() >= 2]
+        params_with_no_decay = [p for _, p in params.items() if p.dim() < 2]
+
+        groups = [
+            {"params" : params_with_decay, "weight_decay": weight_decay},
+            {"params" : params_with_no_decay, "weight_decay": 0.0}
+        ]
+
+        num_params_with_decay = sum(p.numel() for p in params_with_decay)
+        num_params_with_no_decay = sum(p.nume() for p in params_with_no_decay)
+
+        print(f"the number of decayed parameter tensors: {len(params_with_decay)} with {num_params_with_decay} parameters")
+        print(f"the number of non-decayed parameter tensors: {len(params_with_decay)} with {num_params_with_no_decay} parameters")
+
+
+        optimizer = torch.optim.AdamW(params=groups, lr=learning_rate, betas=(0.9, 0.95), eps=1e-8)
+        return optimizer
+
+
+
 
     @classmethod
     def from_saved(cls, path):
