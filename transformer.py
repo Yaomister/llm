@@ -1,8 +1,10 @@
+import os
 import torch
 import math
 import torch.nn as nn
 import torch.nn.functional as F
 from dataclasses import dataclass
+from transformers import GPT2LMHeadModel
 
 
 """
@@ -126,12 +128,58 @@ class GPT(nn.Module):
         # iterate over the submodule and apply weight initialization
         self.apply(self._initialize_weights)
 
-    def from_saved(self, path):
-        if path == "gpt-2":
-            return
+
+    @classmethod
+    def from_saved(cls, path):
+        # HuggingFace GPT-2 weights
+        config_args = {
+            'gpt2':         dict(n_layer=12, n_head=12, n_embd=768),  # 124M params
+            'gpt2-medium':  dict(n_layer=24, n_head=16, n_embd=1024), # 350M params
+            'gpt2-large':   dict(n_layer=36, n_head=20, n_embd=1280), # 774M params
+            'gpt2-xl':      dict(n_layer=48, n_head=25, n_embd=1600), # 1558M params
+        }
+        # these stay consistent across all GPT-2 model sizes
+        config_args["vocab_size"] = 50257
+        config_args['block_size'] = 1024
+        if path in config_args:
+            model_type = path
+            model = GPT(Config(**config_args))
+            sd = model.state_dict()
+            sd_keys = sd.keys()
+            sd_keys = [(k for k in sd_keys if not k.endswith(".attn.bias"))] # this is the causal mask (a buffer not a parameter)
+
+            # load the weights from HuggingFace
+            model_hf = GPT2LMHeadModel.from_pretrained(model_type)
+            sd_hf = model_hf.state_dict()
+
+            sd_keys_hf = sd_hf.keys()
+            sd_keys_hf = [(k for k in sd_keys_hf if not k.endswith(".attn.masked_bias"))]
+            sd_keys_hf = [(k for k in sd_keys_hf if not k.endswith(".attn.bias"))]
+            # the original GPT-2 implementation used Conv1D layers instead of nn.Linear, so saved it as [out dimension, in dimension] which is opposite of what nn.Linear wants, so a transposition is needed
+            transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
+
+            assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}"
+
+            # copy over the weights and transpose if needed
+            for k in sd_keys_hf:
+                if any(k.endswith(transposed)):
+                    assert sd_hf[k].shape[::-1] == sd[k].shape
+                    with torch.no_grad():
+                        sd[k].copy_(sd_hf[k].t())
+                else:
+                    assert sd_hf[k].shape == sd[k].shape
+                    with torch.no_grad():
+                        sd[k].copy_(sd_hf[k])
+
         else:
-            self.load_state_dict(torch.load(path))
+            assert os.path.exists(path), f"failed to load weights from {path}"
             print(f"Successfully loaded model weights from ${path}")
+    
+            model = GPT(Config())
+            model.load_state_dict(torch.load(path))
+
+        return model
+
 
     def _initialize_weights(self, module):
         """
