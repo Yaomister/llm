@@ -1,5 +1,7 @@
 import torch
+import math
 import torch.nn as nn
+import torch.nn.functional as F
 from dataclasses import dataclass
 
 
@@ -33,18 +35,28 @@ class Attention(nn.Module):
         self.q_proj = nn.Linear(config.d_model, config.d_model)
         self.v_proj = nn.Linear(config.d_model, config.d_model)
         self.k_proj = nn.Linear(config.d_model, config.d_model)
+        self.c_proj = nn.Linear(config.d_model, config.d_model)
         self.config = config
+        self.causal_mask = torch.tril(torch.ones(self.config.block_size, self.config.block_size), diagonal=0).view(1, 1, self.config.block_size, self.config.block_size)
         return
     
     def forward(self, x):
         batch, sequence, d_model = x.size()
-
+        d_k = d_model // self.config.n_head
         q = self.q_proj(x)
-        q = q.view(batch, sequence, self.config.n_head, d_model / self.config.n_head)
+        q = q.view(batch, sequence, self.config.n_head, d_k).transpose(1, 2)
         v = self.v_proj(x)
-        v = v.view(batch, sequence, self.config.n_head, d_model / self.config.n_head)
+        v = v.view(batch, sequence, self.config.n_head, d_k).transpose(1, 2)
         k = self.k_proj(x)
-        k = k.view(batch, sequence, self.config.n_head, d_model / self.config.n_head)
+        k = k.view(batch, sequence, self.config.n_head, d_k).transpose(1, 2)
+
+        attention = (q @ k.transpose(-2, -1)) * (1.0/ math.sqrt(d_k))
+        attention = attention.masked_fill(self.causal_mask[:, :, sequence, sequence] == 0, float("-inf"))
+        attention = F.softmax(attention, dim=-1)
+        y = attention @ v
+        y = y.transpose(1, 2).contiguous().view(batch, sequence, d_model)
+        y = self.c_proj(y)
+
 
 
 
