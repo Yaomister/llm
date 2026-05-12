@@ -21,6 +21,7 @@ class MLP(nn.Module):
         self.fc1 = nn.Linear(config.d_model, config.d_model * 4)
         self.gelu = nn.GELU(approximate="tanh")
         self.fc2 = nn.Linear(config.d_model * 4, config.d_model)
+        self.fc2.scale_init = 1
 
     def forward(self, x):
         x = self.fc1(x)
@@ -37,6 +38,7 @@ class Attention(nn.Module):
         self.v_proj = nn.Linear(config.d_model, config.d_model)
         self.k_proj = nn.Linear(config.d_model, config.d_model)
         self.c_proj = nn.Linear(config.d_model, config.d_model)
+        self.c_proj.scale_init = 1
         self.config = config
         self.causal_mask = torch.tril(torch.ones(self.config.block_size, self.config.block_size), diagonal=0).view(1, 1, self.config.block_size, self.config.block_size)
         return
@@ -88,7 +90,22 @@ class GPT(nn.Module):
             heads = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
             ln_f = nn.LayerNorm(config.d_model)
         ))
-        self.ln_head = nn.Linear(config.d_model, config.d_model)
+        self.lm_head = nn.Linear(config.d_model, config.d_model)
+        # See Vaswani paper, the weights are tied to reduce memory
+        self.transformer.wte.weight = self.lm_head.weight
+
+        self.apply(self._initialize_weights)
+
+    def _initialize_weights(self, module):
+        if isinstance(module, nn.Linear):
+            std = 0.02
+            if hasattr(module, "scale_init"):
+                std *= (2 * self.config.n_layer) ** -0.5
+            nn.init.normal_(module.weight, mean=0, std=std)
+            if module.bias is not None:
+                module.bias = nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            nn.init.normal(module.weight, mean=0, std=std)
 
     def forward(self, x, target = None):
         batch, sequence = x.size()
@@ -104,7 +121,7 @@ class GPT(nn.Module):
 
         x = self.transformer.ln_f(x)
 
-        logit = self.ln_head(x)
+        logit = self.lm_head(x)
 
         loss = None
 

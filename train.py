@@ -23,7 +23,6 @@ class Dataloader():
             with open(file, "r", encoding="utf-8") as f:
                 text.append(f.read())
 
-
         tokens = tokenizer.encode("".join(text))
         self.tokens = torch.tensor(tokens)
         self.tokens_count = len(self.tokens)
