@@ -51,15 +51,14 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
 
-
     dataloader = Dataloader(batch_size=4, sequence_length=32)
 
-
     for i in range(100):
-        optimizer = torch.optim.Adam(lr=1e-3)
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
         optimizer.zero_grad()
         x, y = dataloader.next_batch()
-        x.to(device), y.to(device)
+        x = x.to(device) 
+        y = y.to(device)
         logits, loss = model(x, y)
         loss.backward()
         optimizer.step()

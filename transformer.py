@@ -31,6 +31,7 @@ class MLP(nn.Module):
         
 class Attention(nn.Module):
     def __init__(self, config: Config):
+        super().__init__()
         assert config.d_model % config.n_head == 0
         self.q_proj = nn.Linear(config.d_model, config.d_model)
         self.v_proj = nn.Linear(config.d_model, config.d_model)
@@ -57,6 +58,8 @@ class Attention(nn.Module):
         y = y.transpose(1, 2).contiguous().view(batch, sequence, d_model)
         y = self.c_proj(y)
 
+        return y
+
 
 
 
@@ -66,7 +69,7 @@ class Block(nn.Module):
         self.attention = Attention(config)
         self.ln_1 = nn.LayerNorm(config.d_model)
         self.ln_2 = nn.LayerNorm(config.d_model)
-        self.mlp = nn.MLP(config)
+        self.mlp = MLP(config)
 
     def forward(self, x):
         x = x + self.attention(self.ln_1(x))
