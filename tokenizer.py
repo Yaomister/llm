@@ -13,7 +13,6 @@ class Tokenizer:
         self.merges = {}
 
 
-
     def train(self, dataset_path):
         with open(dataset_path, "r", encoding="utf-8") as file:
             dataset = list(file.read().encode("utf-8"))
@@ -89,6 +88,3 @@ class Tokenizer:
                 i += 1
         
         return new_ids
-
-
-                

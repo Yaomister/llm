@@ -15,14 +15,16 @@ class Dataloader():
         tokenizer = Tokenizer()
         tokenizer.load("./merges.json")
         
-        text = ""
+        text = []
 
         files = [os.path.join("./data", f) for f in os.listdir("./data")]
 
         for file in files:
             with open(file, "r", encoding="utf-8") as f:
                 text.append(f.read())
-        tokens = tokenizer.encode(text)
+
+
+        tokens = tokenizer.encode("".join(text))
         self.tokens = torch.tensor(tokens)
         self.tokens_count = len(self.tokens)
         self.current_index = 0
@@ -44,9 +46,23 @@ class Dataloader():
 
 
 
-if __name__ == "main":
+if __name__ == "__main__":
     model = GPT(config=Config())
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
+
+
+    dataloader = Dataloader(batch_size=4, sequence_length=32)
+
+
+    for i in range(100):
+        optimizer = torch.optim.Adam(lr=1e-3)
+        optimizer.zero_grad()
+        x, y = dataloader.next_batch()
+        x.to(device), y.to(device)
+        logits, loss = model(x, y)
+        loss.backward()
+        optimizer.step()
+        print(f"epoch {i}, loss: {loss.item()}")
 
     
