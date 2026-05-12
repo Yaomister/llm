@@ -1,9 +1,9 @@
 import os
+import json
 import torch
 
 from transformer import GPT, Config
 from tokenizer import Tokenizer
-
 
 
 class Dataloader():
@@ -16,7 +16,7 @@ class Dataloader():
         tokenizer.load("./merges.json")
         
         text = []
-
+        
         files = [os.path.join("./data", f) for f in os.listdir("./data")]
 
         for file in files:
@@ -53,7 +53,7 @@ if __name__ == "__main__":
     dataloader = Dataloader(batch_size=4, sequence_length=32)
 
     for i in range(100):
-        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95), eps=1e-8)
         optimizer.zero_grad()
         x, y = dataloader.next_batch()
         x = x.to(device) 
@@ -63,4 +63,6 @@ if __name__ == "__main__":
         optimizer.step()
         print(f"epoch {i}, loss: {loss.item()}")
 
+    
+    torch.save(model.state_dict(), "model.pt")
     
