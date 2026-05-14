@@ -154,8 +154,6 @@ class GPT(nn.Module):
         return optimizer
 
 
-
-
     @classmethod
     def from_saved(cls, path):
         # HuggingFace GPT-2 weights
