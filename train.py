@@ -1,5 +1,7 @@
 import os
 import json
+import math
+import time
 import torch
 
 from transformer import GPT, Config
@@ -43,6 +45,32 @@ class Dataloader():
 
         return x, y
 
+"""
+The original GPT-3 paper trains on batches of 500k tokens, which would cause my laptop to expload if I tried to run it, so we're
+gonna do batches of gradient accumulation.
+"""
+
+total_batch_size = 524288
+batch_size = 16
+sequence_length = 1024
+assert total_batch_size % (batch_size  * sequence_length) == 0, "dimensions must match"
+gradient_accumulation_steps = total_batch_size // (batch_size * sequence_length)
+
+
+max_learning_rate = 6e-4 # according to GPT-3 paper
+min_learning_rate = max_learning_rate * 0.1
+warm_up_steps = 10
+max_steps = 50
+def get_learning_rate(it):
+    if it < warm_up_steps:
+        return max_learning_rate * (it  + 1)/ warm_up_steps
+    elif it > max_steps:
+        return min_learning_rate
+    decay_ratio = (it - warm_up_steps) / (max_steps - warm_up_steps)
+    assert (0 <= decay_ratio <= 1)
+    factor = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
+    return min_learning_rate * factor * (max_learning_rate - min_learning_rate)
+
 
 
 if __name__ == "__main__":
@@ -51,18 +79,35 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
 
-    dataloader = Dataloader(batch_size=4, sequence_length=32)
+    dataloader = Dataloader(batch_size=batch_size, sequence_length=sequence_length)
 
-    for i in range(100):
-        optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95), eps=1e-8)
+    for step in range(max_steps):
+        t0 = time.time()
+        optimizer = model.configure_optimizer(weight_decay=0.1, learning_rate=max_learning_rate, device=device)
         optimizer.zero_grad()
-        x, y = dataloader.next_batch()
-        x = x.to(device) 
-        y = y.to(device)
-        logits, loss = model(x, y)
-        loss.backward()
+
+        # gradient accumulation
+        for micro_step in range(gradient_accumulation_steps):
+            x, y = dataloader.next_batch()
+            x = x.to(device) 
+            y = y.to(device)
+            with torch.autocast(device_type=device, dtype=torch.float16):
+                logits, loss = model(x, y)
+            loss.backward()
+
+        # clipping the global norm at 1
+        norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0) 
+        learning_rate = get_learning_rate(step)
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = learning_rate
         optimizer.step()
-        print(f"epoch {i}, loss: {loss.item()}")
+        # wait for GPU to finish the scheduled work above
+        torch.cuda.synchronize()
+
+        t1 = time.time()
+        dt = (t0 - t1)
+        tokens_per_sec = (dataloader.B * dataloader.T) / (t1 - t0)
+        print(f"step {step:4d} | loss: {loss.item():.6f} | lr: {learning_rate:.4e} | norm: {norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}")
 
     
     torch.save(model.state_dict(), "model.pt")

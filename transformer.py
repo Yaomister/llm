@@ -149,7 +149,6 @@ class GPT(nn.Module):
         print(f"the number of decayed parameter tensors: {len(params_with_decay)} with {num_params_with_decay} parameters")
         print(f"the number of non-decayed parameter tensors: {len(params_with_decay)} with {num_params_with_no_decay} parameters")
 
-
         optimizer = torch.optim.AdamW(params=groups, lr=learning_rate, betas=(0.9, 0.95), eps=1e-8)
         return optimizer
 
