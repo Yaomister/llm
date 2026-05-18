@@ -55,7 +55,7 @@ batch_size = 16
 sequence_length = 1024
 assert total_batch_size % (batch_size  * sequence_length) == 0, "dimensions must match"
 gradient_accumulation_steps = total_batch_size // (batch_size * sequence_length)
-
+ 
 
 max_learning_rate = 6e-4 # according to GPT-3 paper
 min_learning_rate = max_learning_rate * 0.1
