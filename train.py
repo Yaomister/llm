@@ -81,9 +81,10 @@ if __name__ == "__main__":
 
     dataloader = Dataloader(batch_size=batch_size, sequence_length=sequence_length)
 
+    optimizer = model.configure_optimizer(weight_decay=0.1, learning_rate=max_learning_rate)
+
     for step in range(max_steps):
         t0 = time.time()
-        optimizer = model.configure_optimizer(weight_decay=0.1, learning_rate=max_learning_rate, device=device)
         optimizer.zero_grad()
 
         # gradient accumulation
@@ -106,7 +107,7 @@ if __name__ == "__main__":
 
         t1 = time.time()
         dt = (t0 - t1)
-        tokens_per_sec = (dataloader.B * dataloader.T) / (t1 - t0)
+        tokens_per_sec = (batch_size * sequence_length) / (t1 - t0)
         print(f"step {step:4d} | loss: {loss.item():.6f} | lr: {learning_rate:.4e} | norm: {norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}")
 
     

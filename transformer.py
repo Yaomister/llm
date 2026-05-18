@@ -144,7 +144,7 @@ class GPT(nn.Module):
         ]
 
         num_params_with_decay = sum(p.numel() for p in params_with_decay)
-        num_params_with_no_decay = sum(p.nume() for p in params_with_no_decay)
+        num_params_with_no_decay = sum(p.numel() for p in params_with_no_decay)
 
         print(f"the number of decayed parameter tensors: {len(params_with_decay)} with {num_params_with_decay} parameters")
         print(f"the number of non-decayed parameter tensors: {len(params_with_decay)} with {num_params_with_no_decay} parameters")
@@ -225,7 +225,7 @@ class GPT(nn.Module):
     def forward(self, x, target = None):
         batch_size, sequence_length = x.size()
         # sequence cannot exceed the maximum context length the causal mask was built for
-        assert sequence_length < self.config.block_size
+        assert sequence_length <= self.config.block_size, f"Cannot forward sequence of length {T}, block size is only {self.config.block_size}"
         # the GPT-2 paper deviates from the original transformer here: instead of hardcoding sinusoidal positional encodings, they make it a learnable
         pos = torch.arange(0, sequence_length, dtype=torch.long, device=x.device)
 
