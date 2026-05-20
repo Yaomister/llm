@@ -51,7 +51,7 @@ gonna do batches of gradient accumulation.
 """
 
 total_batch_size = 524288
-batch_size = 16
+batch_size = 4
 sequence_length = 1024
 assert total_batch_size % (batch_size  * sequence_length) == 0, "dimensions must match"
 gradient_accumulation_steps = total_batch_size // (batch_size * sequence_length)
@@ -86,7 +86,7 @@ if __name__ == "__main__":
     for step in range(max_steps):
         t0 = time.time()
         optimizer.zero_grad()
-
+        total_loss = 0.0
         # gradient accumulation
         for micro_step in range(gradient_accumulation_steps):
             x, y = dataloader.next_batch()
@@ -94,6 +94,11 @@ if __name__ == "__main__":
             y = y.to(device)
             with torch.autocast(device_type=device, dtype=torch.float16):
                 logits, loss = model(x, y)
+            
+            # we need to normalize the microbatch before summing because 7:24 PMClaude responded: PyTorch takes the mean of the loss within each micro-batch, so accumulating 32 of those gives you a sum of means rather than the mean of the whole batch.PyTorch takes the mean of the loss within each micro-batch
+            loss = loss / gradient_accumulation_steps 
+            total_loss += loss.detach()
+             # This accumulates because we dont clear the gradients in the inner loop
             loss.backward()
 
         # clipping the global norm at 1
