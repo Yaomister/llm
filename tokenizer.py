@@ -1,19 +1,22 @@
 import json
 
 
-# My implementation of Byte Pair Encoding
-
-# https://github.com/openai/gpt-2/blob/master/src/encoder.py
-
-# frequent pairings produce suboptimal behaviour, look at the regex line in the original gpt-2 bpe code
 class Tokenizer:
+    """Byte-pair encoding tokenizer trained from scratch on raw text.
+
+    Unlike the original GPT-2 BPE, this implementation does not pre-split
+    text with a regex before merging, so pairs can merge across what would
+    normally be word/whitespace boundaries. 
+    
+    This can produce suboptimal merges.
+    """
 
     def __init__(self, vocab_size = 1000):
         self.vocab_size = vocab_size
-        self.merges = {}
-
+        self.merges = {}  # (id, id) -> new_id, in the order they were learned
 
     def train(self, dataset_path):
+        """Learn BPE merges from a text file until vocab_size is reached."""
         with open(dataset_path, "r", encoding="utf-8") as file:
             dataset = list(file.read().encode("utf-8"))
 
@@ -33,6 +36,7 @@ class Tokenizer:
 
     
     def encode(self, text):
+        """Convert text into a list of token ids using the learned merges."""
         tokens = list(text.encode("utf-8"))
 
         while True:
@@ -53,6 +57,7 @@ class Tokenizer:
         return tokens
     
     def decode(self, text):
+        """Convert a list of token ids back into text."""
         vocab = {i: bytes([i]) for i in range(256)}
         for (p0, p1), i in self.merges.items():
             vocab[i] = vocab[p0] + vocab[p1]
@@ -61,6 +66,7 @@ class Tokenizer:
 
 
     def save(self, path):
+        """Save the learned merges to a JSON file."""
         to_save = {f"{p0}, {p1}" : i for (p0, p1), i in self.merges.items()}
 
         with open(path, "w") as file:
@@ -68,6 +74,7 @@ class Tokenizer:
         print(f"{len(self.merges)} merges saved to {path}")
 
     def load(self, path):
+        """Load previously learned merges from a JSON file."""
         with open(path, "r") as file:
             raw = json.load(file)
 
@@ -77,6 +84,7 @@ class Tokenizer:
 
     
     def _merge(self, ids, pair, new_id):
+        """Make a merge."""
         i = 0
         new_ids = []
         while i < len(ids):

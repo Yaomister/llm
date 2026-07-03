@@ -1,3 +1,5 @@
+"""Implementation of the GPT-2 model."""
+
 import os
 import torch
 import math
@@ -7,29 +9,20 @@ from dataclasses import dataclass
 from transformers import GPT2LMHeadModel
 
 
-"""
-Implementation of the GPT-2 model
-"""
-
 @dataclass
 class Config:
-    # maximum sequence length
-    block_size = 1024
-    # the number of tokens (10k BPE merges + 256 byte tokens + 1 <|endoftext|> + some padding)
-    vocab_size = 10304
-    # the number of layers (blocks)
-    n_layer = 12
-    # the number of attention heads per layer
-    n_head = 12
-    # the dimension of the embedding
-    d_model = 768
-    # how often to evaluate the model
-    eval_iter = 100
- 
-"""
-A single causal attention head
-"""       
+    """Hyperparameters for the GPT model architecture."""
+    block_size = 1024  # maximum sequence length
+    vocab_size = 10304  # 10k BPE merges + 256 byte tokens + 1 <|endoftext|> + some padding
+    n_layer = 12  # number of decoder blocks
+    n_head = 12  # number of attention heads per layer
+    d_model = 768  # embedding dimension
+    eval_iter = 100  # how often to evaluate the model
+
+
 class Attention(nn.Module):
+    """A single causal (masked) multi-head self-attention layer."""
+
     def __init__(self, config: Config):
         super().__init__()
         # ensure that the embedding dimensions can be divided evenly by the number of layers for multi-head attention
@@ -48,6 +41,7 @@ class Attention(nn.Module):
         self.register_buffer("causal_mask", torch.tril(torch.ones(config.block_size, config.block_size), diagonal=0).view(1, 1, config.block_size, config.block_size))
     
     def forward(self, x):
+        """Apply causal self-attention to the input."""
         batch_size, sequence_length, d_model = x.size()
         # the dimensions of the embedding for a single attention head
         d_k = d_model // self.n_head
@@ -69,15 +63,14 @@ class Attention(nn.Module):
         y = y.transpose(1, 2).contiguous().view(batch_size, sequence_length, d_model) 
         y = self.c_proj(y)
 
-        # Flash attention is built into PyTorch
         # y = F.scaled_dot_product_attention(q, v, k, is_causal=True )
 
         return y
 
-"""
-A single decoder block
-"""       
+
 class Block(nn.Module):
+    """A single decoder block."""
+
     def __init__(self, config: Config):
         super(Block, self).__init__()
         self.attention = Attention(config)
@@ -89,12 +82,11 @@ class Block(nn.Module):
         x = x + self.attention(self.ln_1(x))
         x = x + self.mlp(self.ln_2(x))
         return x
-        
 
-"""
-The feed forward layer
-"""
+
 class MLP(nn.Module):
+    """The feed-forward layer."""
+
     def __init__(self, config: Config):
         super().__init__()
         self.fc1 = nn.Linear(config.d_model, config.d_model * 4)
@@ -107,12 +99,12 @@ class MLP(nn.Module):
         x = self.fc1(x)
         x = self.gelu(x)
         x = self.fc2(x)
-        return x # (batch_size, sequence_length, d_model)
+        return x  # (batch_size, sequence_length, d_model)
 
-"""
-The GPT architecture
-"""
+
 class GPT(nn.Module):
+    """The full GPT-2 architecture."""
+
     def __init__(self, config: Config):
         super(GPT, self).__init__()
         self.config = config
@@ -129,10 +121,7 @@ class GPT(nn.Module):
         self.apply(self._initialize_weights)
 
     def configure_optimizer(self, weight_decay, learning_rate):
-        """
-        add weight decay to 2D tensors. We want the weights to be trained in such a way that it uses many input features weakly rather than a single input feature strongly.
-        there's no point in adding weight decay to 1D tensors because they're just biases.
-        """
+        """Build an AdamW optimizer that only applies weight decay."""
         params = {pn: p for pn, p in self.named_parameters() if p.requires_grad}
 
         params_with_decay = [p for _, p in params.items() if p.dim() >= 2]
@@ -155,7 +144,7 @@ class GPT(nn.Module):
 
     @classmethod
     def from_saved(cls, path):
-        # HuggingFace GPT-2 weights
+        """Load a model either from a pretrained HuggingFace GPT-2 checkpoint name (e.g. "gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl") or from a local state_dict file."""
         config_args = {
             'gpt2':         dict(n_layer=12, n_head=12, n_embd=768),  # 124M params
             'gpt2-medium':  dict(n_layer=24, n_head=16, n_embd=1024), # 350M params
@@ -206,14 +195,10 @@ class GPT(nn.Module):
 
 
     def _initialize_weights(self, module):
-        """
-        this acts as a way to control the variance. The variance stacks up as you go deeper in the neural network,
-        which makes the neurons over confident and make the softmax output collapses a one-hot vector.
-        """
+        """Initialize weights to control activation variance."""
         std = 0.02
         if isinstance(module, nn.Linear):
             if hasattr(module, "scale_init"):
-                #  scaled by 1/(2√n_layer), 2√n_layer because each block has mlp and attention.
                 std *= (2 * self.config.n_layer) ** -0.5
             nn.init.normal_(module.weight, mean=0, std=std)
             if module.bias is not None:
@@ -223,19 +208,18 @@ class GPT(nn.Module):
             nn.init.normal_(module.weight, mean=0, std=std)
 
     def forward(self, x, target = None):
+        """Run the model on a batch of token ids, returning logits."""
         batch_size, sequence_length = x.size()
         # sequence cannot exceed the maximum context length the causal mask was built for
         assert sequence_length <= self.config.block_size, f"Cannot forward sequence of length {T}, block size is only {self.config.block_size}"
-        # the GPT-2 paper deviates from the original transformer here: instead of hardcoding sinusoidal positional encodings, they make it a learnable
+        # GPT-2 uses learned positional embeddings rather than the original transformer's fixed sinusoidal ones
         pos = torch.arange(0, sequence_length, dtype=torch.long, device=x.device)
 
         position_embedding = self.transformer.wpe(pos)
         token_embedding = self.transformer.wte(x)
 
-        # add the token_embedding and position_embedding
-        x = token_embedding + position_embedding 
+        x = token_embedding + position_embedding
 
-        # forward pass through the attention heads
         for head in self.transformer.heads:
             x = head(x)
 
