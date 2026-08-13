@@ -20,11 +20,17 @@ class Model(nn.Module):
             )
 
 class LayerNormalization(nn.Module):
-    def __init__(self):
-        pass
+    def __init__(self, config):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(config.n_embedding))
+        self.bias = nn.Parameter(torch.ones(config.n_embedding))
+
+    def forward(self, x):
+        return (x - x.mean(-1))/ (torch.var(x) + 1e-5) * self.weight + self.bias
 
 class CausalAttention(nn.Module):
     def __init__(self, config):
+        super().__init__()
         assert config.n_embedding % config.n_head == 0
 
         self.c_attention = nn.Linear(config.n_embedding, config.n_embedding * 3, bias= config.bias)
@@ -46,17 +52,21 @@ class CausalAttention(nn.Module):
 
         d_k = self.n_embedding // self.num_heads
 
-        # sawpping dimension 1 and 2 so the score calculated is per head
+        # sawpping dimension 1 and 2 so the score calculated is per head, and you end with a tensor that is (sequence_length, d_k)
         q = q.view(batch_size, sequence_length, self.num_heads, d_k).transpose(1, 2)
         v = v.view(batch_size, sequence_length, self.num_heads, d_k).transpose(1, 2)
         k = k.view(batch_size, sequence_length, self.num_heads, d_k).transpose(1, 2)
 
+
+        # (sequence_length, sequence_length)
         attention = q @ k.transpose(-2, -1)
+        # (sequence_length, sequence_length)
         mask = torch.triu(torch.ones(d_k, d_k, dtype=torch.bool, device=attention.device), diagonal=1)
         attention = attention.masked_fill(mask, float("-inf"))
         attention = attention / math.sqrt(d_k)
         attention = nn.Softmax(attention, dim=-1)
         attention = self.attention_dropout(attention)
+        # (sequence_length, d_k)
         y = attention @  v
 
         y = self.residual_dropout(self.c_proj(y))
@@ -66,8 +76,16 @@ class CausalAttention(nn.Module):
         
 class Block(nn.Module):
     def __init__(self, config):
+        super().__init__()
         self.attention = CausalAttention(config)
         self.mlp = MLP(config)
+        self.ln_1 = LayerNormalization(config)
+        self.ln_2 = LayerNormalization(config)
+        
+    def forward(self, x):
+        x = x + self.attention(self.ln_1(x))
+        x = x + self.mlp(self.ln_2(x))
+        return x
     
 
 class MLP(nn.Module):
