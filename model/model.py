@@ -9,7 +9,6 @@ class Config:
     n_embedding: int = 768
     n_head: int = 12
     dropout: float = 0.5
-    n_heads: int = 12
     bias: bool = True
 
 class Model(nn.Module):
@@ -44,16 +43,16 @@ class CausalAttention(nn.Module):
 
         q, v, k = torch.split(self.c_attention, self.n_embedding, dim=-1)
 
-        # sawpping dimension 1 and 2 so the score calculated is per head
 
         d_k = self.n_embedding // self.num_heads
 
+        # sawpping dimension 1 and 2 so the score calculated is per head
         q = q.view(batch_size, sequence_length, self.num_heads, d_k).transpose(1, 2)
         v = v.view(batch_size, sequence_length, self.num_heads, d_k).transpose(1, 2)
         k = k.view(batch_size, sequence_length, self.num_heads, d_k).transpose(1, 2)
 
         attention = q @ k.transpose(-2, -1)
-        mask = torch.triu(torch.ones(T, T, dtype=torch.bool, device=attention.device), diagonal=1)
+        mask = torch.triu(torch.ones(d_k, d_k, dtype=torch.bool, device=attention.device), diagonal=1)
         attention = attention.masked_fill(mask, float("-inf"))
         attention = attention / math.sqrt(d_k)
         attention = nn.Softmax(attention, dim=-1)
