@@ -7,17 +7,56 @@ from torch import nn, functional as F
 @dataclass
 class Config:
     n_embedding: int = 768
+    vocab_size: int = 50304
     n_head: int = 12
+    block_size: int = 1024
     dropout: float = 0.5
     bias: bool = True
+    n_layers: int = 12
 
 class Model(nn.Module):
-    def __init__(self):
-        self.transformer = nn.Sequential()
-        for _ in range(12):
-            self.transformer.append(
-                Block()
+    def __init__(self, config):
+        assert config.vocab_size is not None
+        assert config.block_size is not None
+        self.config = config
+
+        self.transformer = nn.ModuleDict(
+            dict(
+                wte = nn.Embedding(config.vocab_size, config.n_embedding),
+                wpe = nn.Embedding(config.block_size, config.n_embedding),
+                drop = nn.Dropout(config.dropout),
+                h = nn.ModuleList([Block(config) for _ in range(config.n_layers)]),
+                ln_f = LayerNormalization(config)
             )
+        )
+
+        self.lm_head = nn.Linear(config.n_embedding, config.vocab_size, bias=False)
+
+    def forward(self, x):
+
+        batch_size, sequence_length = x.shape()
+
+        p = torch.arange(0, sequence_length, dtype=torch.long)
+
+        token_embeddings = self.transformer.wte(x)
+        position_embeddings = self.transformer.wpe(p)
+
+        x = self.transformer.drop(token_embeddings + position_embeddings)
+
+        for block in self.transformer.h:
+            x = block(x)
+
+        x = self.transformer.ln_f()
+
+        return x
+
+
+
+    def generate(self):
+        pass
+
+    def _init_weights(self):
+        pass
 
 class LayerNormalization(nn.Module):
     def __init__(self, config):
