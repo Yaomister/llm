@@ -26,6 +26,13 @@ class Model(nn.Module):
         self.lm_head = nn.Linear(config.n_embedding, config.vocab_size, bias=False)
         self.transformer.wte.weight = self.lm_head.weight
 
+        self.apply(self._init_weights)
+
+        for pn, p in self.named_parameters:
+            if pn.endswith("c_proj"):
+                torch.nn.init.normal_(p, mean=0.0, std=0.02/math.sqrt(2 * config.n_layer))
+
+
     def forward(self, x):
 
         batch_size, sequence_length = x.size()
@@ -45,12 +52,17 @@ class Model(nn.Module):
 
         return x
 
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0, std=0.02)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0, std=0.02)
 
     def generate(self):
         pass
 
-    def _init_weights(self):
-        pass
 
 class LayerNormalization(nn.Module):
     def __init__(self, config):

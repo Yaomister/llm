@@ -30,7 +30,6 @@ class Tokenizer:
 
             if not counts or counts[to_merge] < 2:
                 break
-
    
             chunks = [self._merge(chunk, to_merge, new_id) for chunk in chunks]
 
