@@ -17,21 +17,27 @@ class Tokenizer:
 
         merges = {}
 
-        for new_id in range(256, Config.vocab_size):       
+        for new_id in range(256, Config.vocab_size):  
             counts = Counter()      
             for chunk in chunks:
                 for pair in zip(chunk, chunk[1:]):
-                    counts[pair] += 1
+                    counts[pair] += 1  
+
+            if not counts:
+                break
 
             to_merge = max(counts, key=counts.get)
 
-            new_chunks = []
-            for chunk in chunks:
-                new_chunk = self._merge(chunks, to_merge, new_id)
-                new_chunks.append(new_chunk)
-            chunks = new_chunks
+            if not counts or counts[to_merge] < 2:
+                break
+
+   
+            chunks = [self._merge(chunk, to_merge, new_id) for chunk in chunks]
 
             merges[to_merge] = new_id
+
+            if new_id % 100 == 0:
+                print(f"training up to token {new_id}")
 
         json.dump({f"{a},{b}" : v for (a, b), v in merges.items()}, open(save_path, "w"))
 
@@ -71,7 +77,7 @@ class Tokenizer:
         
         ids =  []
         for chunk in self.regex.findall(text):
-            chunk_ids = chunk.encode("utf-8")
+            chunk_ids = list(chunk.encode("utf-8"))
             while len(chunk_ids) >= 2:
                 pair = min(zip(chunk_ids, chunk_ids[1:]), key= lambda pair: self.merges.get(pair, float("inf")))
                 if not pair in self.merges:
