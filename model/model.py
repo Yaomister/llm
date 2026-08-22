@@ -1,7 +1,8 @@
 import math
 import torch
 from dataclasses import dataclass
-from torch import nn, functional as F
+from torch import nn
+import torch.nn.functional as F
 
 
 @dataclass
@@ -10,12 +11,13 @@ class Config:
     vocab_size: int = 50304
     n_head: int = 12
     block_size: int = 1024
-    dropout: float = 0.5
+    dropout: float = 0.1
     bias: bool = True
     n_layers: int = 12
 
 class Model(nn.Module):
     def __init__(self, config):
+        super().__init__()
         assert config.vocab_size is not None
         assert config.block_size is not None
         self.config = config
@@ -31,12 +33,13 @@ class Model(nn.Module):
         )
 
         self.lm_head = nn.Linear(config.n_embedding, config.vocab_size, bias=False)
+        self.transformer.wte.weight = self.lm_head.weight
 
     def forward(self, x):
 
-        batch_size, sequence_length = x.shape()
+        batch_size, sequence_length = x.size()
 
-        p = torch.arange(0, sequence_length, dtype=torch.long)
+        p = torch.arange(0, sequence_length, dtype=torch.long, device=x.device)
 
         token_embeddings = self.transformer.wte(x)
         position_embeddings = self.transformer.wpe(p)
@@ -46,10 +49,10 @@ class Model(nn.Module):
         for block in self.transformer.h:
             x = block(x)
 
-        x = self.transformer.ln_f()
+        x = self.transformer.ln_f(x)
+        x = self.lm_head(x)
 
         return x
-
 
 
     def generate(self):
@@ -62,10 +65,12 @@ class LayerNormalization(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(config.n_embedding))
-        self.bias = nn.Parameter(torch.ones(config.n_embedding))
+        self.bias = nn.Parameter(torch.zeros(config.n_embedding))
 
     def forward(self, x):
-        return (x - x.mean(-1))/ (torch.var(x) + 1e-5) * self.weight + self.bias
+        mean = x.mean(-1, keepdim=True)
+        var = x.var(-1, keepdim=True) 
+        return (x - mean)/ torch.sqrt(var+ 1e-5) * self.weight + self.bias
 
 class CausalAttention(nn.Module):
     def __init__(self, config):
@@ -81,26 +86,26 @@ class CausalAttention(nn.Module):
 
         self.n_embedding = config.n_embedding
         self.dropout = config.dropout
-        self.num_heads = config.num_heads
+        self.n_heads = config.n_heads
 
     def forward(self, x):
         batch_size, sequence_length, _ = x.size()
 
-        q, v, k = torch.split(self.c_attention, self.n_embedding, dim=-1)
+        q, k, v = self.c_attention(x).split(self.n_embedding, dim=-1)
 
 
-        d_k = self.n_embedding // self.num_heads
+        d_k = self.n_embedding // self.n_heads
 
         # sawpping dimension 1 and 2 so the score calculated is per head, and you end with a tensor that is (sequence_length, d_k)
-        q = q.view(batch_size, sequence_length, self.num_heads, d_k).transpose(1, 2)
-        v = v.view(batch_size, sequence_length, self.num_heads, d_k).transpose(1, 2)
-        k = k.view(batch_size, sequence_length, self.num_heads, d_k).transpose(1, 2)
+        q = q.view(batch_size, sequence_length, self.n_heads, d_k).transpose(1, 2)
+        v = v.view(batch_size, sequence_length, self.n_heads, d_k).transpose(1, 2)
+        k = k.view(batch_size, sequence_length, self.n_heads, d_k).transpose(1, 2)
 
 
         # (sequence_length, sequence_length)
         attention = q @ k.transpose(-2, -1)
         # (sequence_length, sequence_length)
-        mask = torch.triu(torch.ones(d_k, d_k, dtype=torch.bool, device=attention.device), diagonal=1)
+        mask = torch.triu(torch.ones(sequence_length, sequence_length, dtype=torch.bool, device=attention.device), diagonal=1)
         attention = attention.masked_fill(mask, float("-inf"))
         attention = attention / math.sqrt(d_k)
         attention = nn.Softmax(attention, dim=-1)
@@ -108,11 +113,12 @@ class CausalAttention(nn.Module):
         # (sequence_length, d_k)
         y = attention @  v
 
+        y.transpose(d_k, sequence_length).view(batch_size, sequence_length, self.n_embedding)
+
         y = self.residual_dropout(self.c_proj(y))
+
         return y
-
-
-        
+ 
 class Block(nn.Module):
     def __init__(self, config):
         super().__init__()
