@@ -33,7 +33,7 @@ class Tokenizer:
 
             merges[to_merge] = new_id
 
-        json.dump({f"{a}, {b}" : v for (a, b), v in merges.items()}, open(save_path, "w"))
+        json.dump({f"{a},{b}" : v for (a, b), v in merges.items()}, open(save_path, "w"))
 
 
     def _merge(self, chunk, to_merge, new_id):
@@ -90,9 +90,9 @@ class Tokenizer:
             if id in self.vocabulary:
                 text.append(self.vocabulary[id])
             else:
-                text.append(f"{id}".decode('utf-8'))
+                raise ValueError(f"unknown token id: {id}")
 
-        return "".join(text)
+        return b"".join(text).decode('utf-8', errors='replace')
 
 if __name__ == "__main__":
 
