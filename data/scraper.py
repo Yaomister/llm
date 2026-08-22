@@ -7,6 +7,7 @@ headers = {
 }
 
 def scrape(topic):
+    print(f"scraping {topic}")
     html = requests.get(f'https://en.wikipedia.org/wiki/{topic.replace(" ", "_")}', headers=headers).text
 
     body = BeautifulSoup(html, "html.parser").select_one("div.mw-parser-output")
