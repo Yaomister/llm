@@ -6,6 +6,7 @@ headers = {
     "User-Agent": "llm/1.0"
 }
 
+
 def scrape(topic):
     print(f"scraping {topic}")
     html = requests.get(f'https://en.wikipedia.org/wiki/{topic.replace(" ", "_")}', headers=headers).text
@@ -33,9 +34,3 @@ if __name__ == "__main__":
             extracted_text.append(scrape(topic))
 
     save(extracted_text)
-            
-        
-
-
-
-    
