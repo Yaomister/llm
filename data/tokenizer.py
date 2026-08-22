@@ -1,4 +1,4 @@
-import re
+import regex as re
 import json
 from config import Config
 from collections import Counter
@@ -10,6 +10,8 @@ class Tokenizer:
         self.regex = re.compile(r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+""")
 
     def train(self, text, save_path):
+        print('training tokenizer')
+    
         chunks = self.regex.findall(text)
         chunks = [list(chunk.encode('utf-8')) for chunk in chunks]
 
@@ -23,27 +25,29 @@ class Tokenizer:
 
             to_merge = max(counts, key=counts.get)
 
-            chunks = self._merge(chunks, to_merge, new_id)
+            new_chunks = []
+            for chunk in chunks:
+                new_chunk = self._merge(chunks, to_merge, new_id)
+                new_chunks.append(new_chunk)
+            chunks = new_chunks
 
             merges[to_merge] = new_id
 
         json.dump({f"{a}, {b}" : v for (a, b), v in merges.items()}, open(save_path, "w"))
 
 
-    def _merge(chunks, to_merge, new_id):
-        new_chunks = []
-        for chunk in chunks:
-            new_chunk = []
-            i = 0
-            while i < len(chunks):
-                if i + 1 < len(chunk) and chunk[i] == to_merge[0] and chunk[i + 1] == to_merge[1]:
-                    new_chunk.append(new_id)
-                    i += 2
-                else:
-                    new_chunk.append(chunk[i])
-                    i += 1
-            new_chunks.append(new_chunk)
+    def _merge(self, chunk, to_merge, new_id):
 
+        new_chunk = []
+        i = 0
+        while i < len(chunk):
+            if i + 1 < len(chunk) and chunk[i] == to_merge[0] and chunk[i + 1] == to_merge[1]:
+                new_chunk.append(new_id)
+                i += 2
+            else:
+                new_chunk.append(chunk[i])
+                i += 1
+    
         return new_chunk
             
 
@@ -97,5 +101,4 @@ if __name__ == "__main__":
     with open("data/datasets/text.txt", "r") as f:
         text = f.read()
 
-    bpe.train(text)
-     
+    bpe.train(text, "data/merges.json")
