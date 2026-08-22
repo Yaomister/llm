@@ -2,16 +2,15 @@ import re
 import json
 from config import Config
 from collections import Counter
-from argparse import ArgumentParser
 
 
-class BytePairEncoding:
-    def __int__(self):
-        pass
+class Tokenizer:
+    def __init__(self):
+        self.vocabulary = None
+        self.regex = re.compile(r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+""")
 
-    def train(self, text):
-        r = re.compile(r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+""")
-        chunks = r.findall(text)
+    def train(self, text, save_path):
+        chunks = self.regex.findall(text)
         chunks = [list(chunk.encode('utf-8')) for chunk in chunks]
 
         merges = {}
@@ -25,32 +24,82 @@ class BytePairEncoding:
 
             to_merge = max(counts, key=counts.get)
 
-            new_chunks = []
-            for chunk in chunks:
-                new_chunk = []
-                i = 0
-                while i < len(chunks):
-                    if i + 1 < len(chunks) and chunks[i] == to_merge[0] and chunk[i + 1] == to_merge[1]:
-                        new_chunk.append(new_id)
-                        i += 2
-                    else:
-                        new_chunk.append(chunk[i])
-                        i += 1
-                new_chunks.append(new_chunk)
+            chunks = self._merge(chunks, to_merge, new_id)
 
-            chunks = new_chunks
             merges[to_merge] = new_id
 
-            self._save(merges)
+            self._save(merges, save_path)
 
-    def _save(merges):
-        with open("/data/merges.json", "w") as f:
-            f.write(json.dumps(merges))
 
+    def _merge(chunks, to_merge, new_id):
+        new_chunks = []
+        for chunk in chunks:
+            new_chunk = []
+            i = 0
+            while i < len(chunks):
+                if i + 1 < len(chunk) and chunk[i] == to_merge[0] and chunk[i + 1] == to_merge[1]:
+                    new_chunk.append(new_id)
+                    i += 2
+                else:
+                    new_chunk.append(chunk[i])
+                    i += 1
+            new_chunks.append(new_chunk)
+
+        return new_chunk
             
+    def _save(self, merges, save_path):
+        json.dump({f"{a}, {b}" : v for (a, b), v in merges.items()}, open(save_path, "w"))
+
+
+    def load(self, load_path):
+
+        with open(load_path, "r") as f:
+            raw_merges = json.loads(f.read())
+            merges = {tuple(map(int, k.split(','))): v for k, v in raw_merges.items()}
+
+        vocabulary = {i: bytes([i]) for i in range(256)}
+
+        for pair, id in merges.items():
+            vocabulary[id] = vocabulary[pair[0]] + vocabulary[pair[1]]
+
+        self.merges = merges
+        self.vocabulary = vocabulary
+
+    def encode(self, text):
+        assert self.merges is not None
+        
+        ids =  []
+        for chunk in self.regex.findall(text):
+            chunk_ids = chunk.encode("utf-8")
+            while len(chunk_ids) >= 2:
+                pair = min(zip(chunk_ids, chunk_ids[1:]), key= lambda pair: self.merges.get(pair, float("inf")))
+                if not pair in self.merges:
+                    break
+                chunk_ids = self._merge(chunk_ids, pair, self.merges[pair])
+
+            ids.extend(chunk_ids)
+
+        return ids
+
+    def decode(self, ids):
+        if not self.vocabulary:
+            raise RuntimeError()
+
+        text = []
+
+        for id in ids:
+            if id in self.vocabulary:
+                text.append(self.vocabulary[id])
+            else:
+                text.append(f"{id}".decode('utf-8'))
+
+        return "".join(text)
+
+
+
 if __name__ == "__main__":
 
-    bpe = BytePairEncoding()
+    bpe = Tokenizer()
 
     with open("data/datasets/text.txt", "r") as f:
         text = f.read()
