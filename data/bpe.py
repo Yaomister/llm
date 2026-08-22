@@ -18,7 +18,6 @@ class Tokenizer:
         for new_id in range(256, Config.vocab_size):       
             counts = Counter()      
             for chunk in chunks:
-        
                 for pair in zip(chunk, chunk[1:]):
                     counts[pair] += 1
 
@@ -28,7 +27,7 @@ class Tokenizer:
 
             merges[to_merge] = new_id
 
-            self._save(merges, save_path)
+        json.dump({f"{a}, {b}" : v for (a, b), v in merges.items()}, open(save_path, "w"))
 
 
     def _merge(chunks, to_merge, new_id):
@@ -47,12 +46,10 @@ class Tokenizer:
 
         return new_chunk
             
-    def _save(self, merges, save_path):
-        json.dump({f"{a}, {b}" : v for (a, b), v in merges.items()}, open(save_path, "w"))
 
 
     def load(self, load_path):
-
+        # already saved in order
         with open(load_path, "r") as f:
             raw_merges = json.loads(f.read())
             merges = {tuple(map(int, k.split(','))): v for k, v in raw_merges.items()}
@@ -78,12 +75,10 @@ class Tokenizer:
                 chunk_ids = self._merge(chunk_ids, pair, self.merges[pair])
 
             ids.extend(chunk_ids)
-
         return ids
 
     def decode(self, ids):
-        if not self.vocabulary:
-            raise RuntimeError()
+        assert self.vocabulary is not None
 
         text = []
 
@@ -94,8 +89,6 @@ class Tokenizer:
                 text.append(f"{id}".decode('utf-8'))
 
         return "".join(text)
-
-
 
 if __name__ == "__main__":
 
