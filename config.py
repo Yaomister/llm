@@ -5,11 +5,13 @@ class Config:
     n_embedding: int = 768
     batch_size: int = 4
     vocab_size: int = 50304
-    n_head: int = 12
+    n_head: int = 6
     block_size: int = 1024
+    d_k = 128
     dropout: float = 0.1
     bias: bool = True
     n_layers: int = 12
+    aspect_ratio: int = 64
     use_flash_attention: bool = False
 
     # inference parameters
@@ -25,3 +27,15 @@ class Config:
     minimum_learning_rate: float = 3e-5
     weight_decay:int  = 0.1
     accumulation_steps:int = 100
+
+
+def scale(depth):
+    config = Config()
+    base_dimension = depth * config.aspect_ratio
+    config.n_layers = depth
+    # round it so its a multiple of d_k
+    config.n_embedding = ((base_dimension + config.d_k - 1) // config.d_k)
+    config.n_head = config.n_embedding // config.n_head
+    return config
+
+    

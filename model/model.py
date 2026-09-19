@@ -131,6 +131,7 @@ class MultiHeadAttention(nn.Module):
         self.residual_dropout = nn.Dropout(config.dropout)
 
         self.n_embedding = config.n_embedding
+        self.d_k = config.d_k
         self.dropout = config.dropout
         self.n_heads = config.n_head
         self.use_flash_attention = config.use_flash_attention
@@ -164,12 +165,11 @@ class MultiHeadAttention(nn.Module):
         # (sequence_length, sequence_length)
         mask = torch.triu(torch.ones(sequence_length, sequence_length, dtype=torch.bool, device=attention.device), diagonal=1)
 
-        d_k = self.n_embedding // self.n_heads
 
         # sawpping dimension 1 and 2 so the score calculated is per head, and you end with a tensor that is (sequence_length, d_k)
-        q = q.view(batch_size, sequence_length, self.n_heads, d_k).transpose(1, 2)
-        v = v.view(batch_size, v.size(1), self.n_heads, d_k).transpose(1, 2)
-        k = k.view(batch_size, k.size(1), self.n_heads, d_k).transpose(1, 2)
+        q = q.view(batch_size, sequence_length, self.n_heads, self.d_k).transpose(1, 2)
+        v = v.view(batch_size, v.size(1), self.n_heads, self.d_k).transpose(1, 2)
+        k = k.view(batch_size, k.size(1), self.n_heads, self.d_k).transpose(1, 2)
 
         if self.use_flash_attention:
             # PyTorch uses FlashAttention2
@@ -179,7 +179,7 @@ class MultiHeadAttention(nn.Module):
             attention = q @ k.transpose(-2, -1)
         
             attention = attention.masked_fill(mask, float("-inf"))
-            attention = attention / math.sqrt(d_k)
+            attention = attention / math.sqrt(self.d_k)
             attention = F.softmax(attention, dim=-1)
             attention = self.attention_dropout(attention)
             # (batch_size, n_head, sequence_length, d_k)
