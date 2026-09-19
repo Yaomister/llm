@@ -34,10 +34,8 @@ master_process = ddp_rank == 0
 
 model = Model(Config()).to(device)
 model = DDP(model, device_ids=[ddp_local_rank])
-model = torch.compile(model=model, dynamic=True)
+model = torch.compile(model=model, dynamic=False)
 raw_model = model.module
-
-
 
 device_type = get_device_type()
 flops_per_token = raw_model.estimate_flops()
@@ -80,7 +78,7 @@ def configure_optimizer(model):
     to_decay = [p for p in model.parameters() if p.dim() >= 2]
     to_not_decay = [p for p in model.parameters() if p.dim() < 2]
 
-    optimizer = torch.optim.AdamW([
+    optimizer = AdamW([
         {'params': to_decay,  "weight_decay" : Config.weight_decay},
         {"params" : to_not_decay, "weight_decay": 0}
     ], lr=Config.learning_rate, betas=(0.9, 0.95), fused=True)
