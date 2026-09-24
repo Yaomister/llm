@@ -8,7 +8,7 @@ import numpy as np
 from model import Model
 from config import scale
 from utils.setup import ddp
-from torch.optim import AdamW
+from torch.optim import AdamW, Muon
 from dataclasses import asdict
 from utils.printing import print0
 from data.tokenizer import Tokenizer
@@ -82,15 +82,17 @@ def configure_optimizer(model):
     to_decay = [p for p in model.parameters() if p.dim() >= 2]
     to_not_decay = [p for p in model.parameters() if p.dim() < 2]
 
-    optimizer = AdamW([
-        {'params': to_decay,  "weight_decay" : config.weight_decay},
-        {"params" : to_not_decay, "weight_decay": 0}
-    ], lr=config.learning_rate, betas=(0.9, 0.95), fused=True)
+    adam = AdamW(
+         [ {"params" : to_not_decay, "weight_decay": 0}], lr=config.learning_rate, betas=(0.9, 0.95), fused=True)
 
-    return optimizer
+    muon = Muon(
+        [{'params': to_decay,  "weight_decay" : config.weight_decay}], lr = config.learning_rate
+    )
+
+    return [muon, adam]
 
 def get_learning_rate(epoch):
-    warmup_epochs, decay_epochs, learning_rate, minimum_learning_rate = config.learning_rate_warmup_epochs, config.learning_rate_decay_epochs, config.learning_rate, Config.minimum_learning_rate
+    warmup_epochs, decay_epochs, learning_rate, minimum_learning_rate = config.learning_rate_warmup_epochs, config.learning_rate_decay_epochs, config.learning_rate, config.minimum_learning_rate
     if epoch < warmup_epochs:
         return learning_rate * ((epoch + 1 ) / (warmup_epochs + 1))
     elif epoch > decay_epochs:
@@ -118,12 +120,13 @@ if __name__ == "__main__":
     evaluation_loader = DataLoader(val_data, config.batch_size, config.block_size,
                             ddp_rank, ddp_world_size)
 
-    optimizer = configure_optimizer(model)
+    optimizers = configure_optimizer(model)
 
     if args.resume_from_checkpoint and  os.path.isfile("checkpoint.pt"):
         checkpoint = torch.load("checkpoint.pt")
         model.load_state_dict(checkpoint['model'], strict=True, assign=True)
-        optimizer.load_state_dict(checkpoint['optimizer'])
+        for optimizer in optimizers:
+            optimizer.map.load_state_dict(checkpoint['optimizer']) for optimzier in optimizers
         starting_epoch = checkpoint['epoch'] + 1
         best_loss = checkpoint['min_loss']
     else:
@@ -135,14 +138,16 @@ if __name__ == "__main__":
         print0(f"epoch {epoch}")
         current_learning_rate = get_learning_rate(epoch)
 
-        for g in optimizer.param_groups:
-            g['lr'] = current_learning_rate
+        for optimizer in optimizers:
+            for g in optimizer.param_groups:
+                g['lr'] = current_learning_rate
 
         torch.cuda.synchronize()
         t0 = time.time()
 
         # gradient accumulation so the GPUs dont explode
-        optimizer.zero_grad(set_to_none=True)
+        for optimizer in optimizers:
+            optimizer.zero_grad(set_to_none=True)
         for micro_step in range(config.accumulation_steps):
             x, y = train_loader.next_batch()
             x, y = x.to(device), y.to(device)
@@ -156,9 +161,10 @@ if __name__ == "__main__":
 
         if config.grad_clip != 0:
             # gradient clipping, so one bad run doesnt throw off all the weights
-            torch.nn.utils.clip_grad_norm_(model.parameters(), Config.grad_clip)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
 
-        optimizer.step()
+        for optimizer in optimizers:
+            optimizer.step()
 
         # gradient checkpointing
         if loss.item() < best_loss and master_process:
