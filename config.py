@@ -26,7 +26,12 @@ class Config:
     learning_rate: float = 3e-4
     minimum_learning_rate: float = 3e-5
     weight_decay:int  = 0.1
-    accumulation_steps:int = 100
+    accumulation_steps:int = 396
+
+    # supervised fine-tuning
+    step_to_start_from: int  = 100
+    model_tag: str = "model.pt"
+    
 
 
 def scale(depth):

@@ -1,7 +1,11 @@
 import os
+import re
 import json
 import torch
 import logging
+from model import Model
+from pathlib import Path
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +28,24 @@ def save_checkpoint(dir, step, model_data, optimizer_data, meta_data, ddp_rank):
         torch.save(optimizer_path, optimizer_data)
         logger.info(f"Saved optimizer parameters ta to f{meta_data_path}.")
 
+def find_last_step(checkpoint_dir):
+    checkpoint_files = [f for f in os.listdir(checkpoint_dir) if re.search(r'model_(\d+)\.pt$', f)]
+    if not checkpoint_files:
+        raise FileNotFoundError(f"No checkpoint files found in {checkpoint_files}")
 
+    return max(int(f.split("_")[-1].split(".")[0]) for f in checkpoint_files)
+
+def build_model(checkpoint_dir, model_tag, device):
+    config = Config()
+
+    path = Path(f"{checkpoint_dir}/{model_tag}")
+    last_step = find_last_step()
+    checkpoint = load_checkpoint(path, last_step, True, device)
+
+    model_data, optimizer_data, meta_data = load_checkpoint()
+    model = Model(model_data)
+
+    return model
 
 def load_checkpoint(dir, step, load_optimizer, device, ddp_rank = 0):
     model_path = os.path.join(dir, f"model_{step:06d}.pt")
