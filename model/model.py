@@ -17,14 +17,13 @@ class Model(nn.Module):
         self.eot_token_id = config.vocab_size
         self.current_position = 0
 
-
         self.transformer = nn.ModuleDict(
             dict(
-                wte = nn.Embedding(config.vocab_size, config.n_embedding),
-                wpe = nn.Embedding(config.block_size, config.n_embedding),
-                drop = nn.Dropout(config.dropout),
-                h = nn.ModuleList([Block(config) for _ in range(config.n_layers)]),
-                ln_f = LayerNormalization(config)
+                wte=nn.Embedding(config.vocab_size, config.n_embedding),
+                wpe=nn.Embedding(config.block_size, config.n_embedding),
+                drop=nn.Dropout(config.dropout),
+                h=nn.ModuleList([Block(config) for _ in range(config.n_layers)]),
+                ln_f=LayerNormalization(config),
             )
         )
 
@@ -35,7 +34,9 @@ class Model(nn.Module):
 
         for pn, p in self.named_parameters():
             if pn.endswith("c_proj"):
-                torch.nn.init.normal_(p, mean=0.0, std=0.02/math.sqrt(2 * config.n_layer))
+                torch.nn.init.normal_(
+                    p, mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer)
+                )
 
     def _reset_cache(self):
         for block in self.transformer.h:
@@ -47,9 +48,9 @@ class Model(nn.Module):
         self._reset_cache()
 
         if self.use_cache:
-            logits = self.forward(indexes[:, -self.block_size: ])
+            logits = self.forward(indexes[:, -self.block_size :])
             for _ in range(maximum_new_tokens):
-                next_index = logits.argmax(dim = -1, keepdim=True)
+                next_index = logits.argmax(dim=-1, keepdim=True)
                 indexes = torch.cat([indexes, next_index], dim=1)
                 if next_index.item() == self.eot_token_id:
                     break
@@ -57,8 +58,8 @@ class Model(nn.Module):
         else:
             for _ in range(maximum_new_tokens):
                 logits, _ = self.forward(indexes)
-                next_index = logits.argmax(dim = -1, keepdim=True)
-                indexes = torch.concat([indexes, next_index], dim= 1)
+                next_index = logits.argmax(dim=-1, keepdim=True)
+                indexes = torch.concat([indexes, next_index], dim=1)
 
         return indexes
 
@@ -66,14 +67,18 @@ class Model(nn.Module):
         # 2 for forward pass and 4 for backward pass per parameter, and 12 * number of layers * embedding size * block size
         parameters = sum(p.numel() for p in self.parameters())
         return 6 * parameters + 12 * self.n_embedding * self.block_size * self.n_head
-        
-        
+
     def forward(self, x, targets=None):
 
         batch_size, sequence_length = x.size()
 
         if self.use_cache:
-            p = torch.arange(self.current_position, self.current_position + sequence_length, dtype=torch.long, device=x.device)
+            p = torch.arange(
+                self.current_position,
+                self.current_position + sequence_length,
+                dtype=torch.long,
+                device=x.device,
+            )
             self.current_position += sequence_length
         else:
             p = torch.arange(0, sequence_length, dtype=torch.long, device=x.device)
@@ -115,17 +120,22 @@ class LayerNormalization(nn.Module):
 
     def forward(self, x):
         mean = x.mean(-1, keepdim=True)
-        var = x.var(-1, keepdim=True) 
-        return (x - mean)/ torch.sqrt(var+ 1e-5) * self.weight + self.bias
+        var = x.var(-1, keepdim=True)
+        return (x - mean) / torch.sqrt(var + 1e-5) * self.weight + self.bias
+
 
 class MultiHeadAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
         assert config.n_embedding % config.n_head == 0
 
-        self.c_attention = nn.Linear(config.n_embedding, config.n_embedding * 3, bias= config.bias)
+        self.c_attention = nn.Linear(
+            config.n_embedding, config.n_embedding * 3, bias=config.bias
+        )
 
-        self.c_proj = nn.Linear(config.n_embedding, config.n_embedding, bias=config.bias)
+        self.c_proj = nn.Linear(
+            config.n_embedding, config.n_embedding, bias=config.bias
+        )
 
         self.attention_dropout = nn.Dropout(config.dropout)
         self.residual_dropout = nn.Dropout(config.dropout)
@@ -145,7 +155,6 @@ class MultiHeadAttention(nn.Module):
         self.cache_k = None
         self.cache_v = None
 
-
     def forward(self, x):
         batch_size, sequence_length, _ = x.size()
 
@@ -157,14 +166,21 @@ class MultiHeadAttention(nn.Module):
                 self.cache_v = v
             else:
                 self.cache_k = torch.concat([self.cache_k, k], dim=1)
-                self.cache_v = torch.concat([self.cache_v, v], dim =1)
+                self.cache_v = torch.concat([self.cache_v, v], dim=1)
 
             k = self.cache_k
             v = self.cache_v
 
         # (sequence_length, sequence_length)
-        mask = torch.triu(torch.ones(sequence_length, sequence_length, dtype=torch.bool, device=attention.device), diagonal=1)
-
+        mask = torch.triu(
+            torch.ones(
+                sequence_length,
+                sequence_length,
+                dtype=torch.bool,
+                device=attention.device,
+            ),
+            diagonal=1,
+        )
 
         # sawpping dimension 1 and 2 so the score calculated is per head, and you end with a tensor that is (sequence_length, d_k)
         q = q.view(batch_size, sequence_length, self.n_heads, self.d_k).transpose(1, 2)
@@ -173,17 +189,19 @@ class MultiHeadAttention(nn.Module):
 
         if self.use_flash_attention:
             # PyTorch uses FlashAttention2
-            y = F.scaled_dot_product_attention(q, k, v, mask, self.dropout, is_causal=True)
+            y = F.scaled_dot_product_attention(
+                q, k, v, mask, self.dropout, is_causal=True
+            )
         else:
             # (sequence_length, sequence_length)
             attention = q @ k.transpose(-2, -1)
-        
+
             attention = attention.masked_fill(mask, float("-inf"))
             attention = attention / math.sqrt(self.d_k)
             attention = F.softmax(attention, dim=-1)
             attention = self.attention_dropout(attention)
             # (batch_size, n_head, sequence_length, d_k)
-            y = attention @  v
+            y = attention @ v
 
         y = y.transpose(1, 2).reshape(batch_size, sequence_length, self.n_embedding)
 
@@ -191,7 +209,7 @@ class MultiHeadAttention(nn.Module):
 
         return y
 
- 
+
 class Block(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -199,12 +217,12 @@ class Block(nn.Module):
         self.mlp = MLP(config)
         self.ln_1 = LayerNormalization(config)
         self.ln_2 = LayerNormalization(config)
-        
+
     def forward(self, x):
         x = x + self.attention(self.ln_1(x))
         x = x + self.mlp(self.ln_2(x))
         return x
-    
+
 
 class MLP(nn.Module):
     def __init__(self, config):

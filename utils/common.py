@@ -1,5 +1,6 @@
 import torch
 
+
 def get_device_type():
     if torch.cuda.is_available():
         return "cuda"
@@ -7,6 +8,7 @@ def get_device_type():
         return "mps"
     else:
         return "cpu"
+
 
 def get_peak_flops(device_name: str) -> float:
     name = device_name.lower()
@@ -53,4 +55,4 @@ def get_peak_flops(device_name: str) -> float:
             return flops
 
     # for cpu
-    return float('inf')
+    return float("inf")

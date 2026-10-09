@@ -5,7 +5,8 @@ import torch.distributed as dist
 
 logger = logging.getLogger(__name__)
 
-def ddp(device = "cuda"):
+
+def ddp(device="cuda"):
     assert device in ["cpu", "cuda", "mps"], "invalid device."
     if device == "cuda":
         assert torch.cuda.is_available(), "cuda is not available."
@@ -21,7 +22,7 @@ def ddp(device = "cuda"):
 
     is_ddp_available, ddp_rank, ddp_local_rank, ddp_world_size = get_ddp_information()
     if is_ddp_available and device == "cuda":
-        device_id = torch.device('cuda', ddp_local_rank)
+        device_id = torch.device("cuda", ddp_local_rank)
         torch.cuda.set_device(device)
         dist.init_process_group(backend="nccl", device_id=device_id)
     else:
@@ -41,7 +42,7 @@ def get_ddp_information():
     if is_ddp_available():
         ddp_rank = int(os.environ["RANK"])
         ddp_local_rank = int(os.environ["LOCAL_RANK"])
-        ddp_world_size = int(os.environ['WORLD_SIZE'])
+        ddp_world_size = int(os.environ["WORLD_SIZE"])
         return True, ddp_rank, ddp_local_rank, ddp_world_size
     else:
         return False, 0, 0, 1
