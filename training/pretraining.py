@@ -8,18 +8,14 @@ import numpy as np
 from model import Model
 from config import scale
 from utils.setup import ddp
-from torch.optim import AdamW, Muon
 from dataclasses import asdict
-from utils.printing import print0
+from torch.optim import AdamW, Muon
 from data.tokenizer import Tokenizer
 from data.dataloader import DataLoader
+from utils.common import print0, tokenize_dataset
 from utils.common import get_peak_flops, get_device_type
 from torch.nn.parallel import DistributedDataParallel as DDP
-
-raw_dataset_dir = "data/datasets/text.txt"
-bin_training_dataset_dir = "data/datasets/train.bin"
-bin_validation_dataset_dir = "data/datasets/validate.bin"
-merges_dir = "data/merges.json"
+from utils.directories import (PRETRAINING_BIN_DATASET_DIR, PRETRAINING_BIN_VALIDATION_DATASET_DIR, PRETRAINING_RAW_DATASET_DIR, PRETRAINING_MERGES_DIR)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--resume_from_checkpoint", type=bool, default=False, required=False)
@@ -45,26 +41,14 @@ device_type = get_device_type()
 flops_per_token = raw_model.estimate_flops()
 peak_flops = get_peak_flops(device_type)
 
-def tokenize_dataset(dir):
-    with open(dir, "r") as f:
-        raw_text = f.read()
-
-    ids = tokenizer.encode(raw_text)
-
-    print0(f"{len(raw_text)} characters to {len(ids)} tokens")
-
-    split = int(len(ids) * 0.8)
-
-    np.array(ids[:split], dtype=np.uint16).tofile(bin_training_dataset_dir)
-    np.array(ids[split:], dtype=np.uint16).tofile(bin_validation_dataset_dir)
 
 @torch.no_grad()
 def evaluate_loss(model, evaluation_loader):
     out = {}
     model.eval()
     for dataset, dataset_dir in {
-        "validation" : bin_validation_dataset_dir,
-        "training": bin_training_dataset_dir
+        "validation" : PRETRAINING_BIN_DATASET_DIR,
+        "training": PRETRAINING_BIN_VALIDATION_DATASET_DIR
     }.items():
         losses = torch.zeros(config.evaluation_epochs)
         for i in  range(config.evaluation_epochs):
@@ -107,13 +91,13 @@ if __name__ == "__main__":
     print0('start training')
 
     tokenizer = Tokenizer()
-    tokenizer.load(merges_dir)
+    tokenizer.load(PRETRAINING_MERGES_DIR)
 
-    if not os.path.isfile(bin_training_dataset_dir):
-        tokenize_dataset(raw_dataset_dir)
+    if not os.path.isfile(PRETRAINING_BIN_DATASET_DIR):
+        tokenize_dataset(PRETRAINING_RAW_DATASET_DIR)
 
-    train_data = np.fromfile(bin_training_dataset_dir, dtype=np.uint16)
-    val_data = np.fromfile(bin_validation_dataset_dir, dtype=np.uint16)
+    train_data = np.fromfile(PRETRAINING_BIN_DATASET_DIR, dtype=np.uint16)
+    val_data = np.fromfile(PRETRAINING_BIN_VALIDATION_DATASET_DIR, dtype=np.uint16)
 
     train_loader = DataLoader(train_data, config.batch_size, config.block_size,
                               ddp_rank, ddp_world_size)

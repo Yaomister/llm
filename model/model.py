@@ -70,7 +70,7 @@ class Model(nn.Module):
 
     def forward(self, x, targets=None):
 
-        batch_size, sequence_length = x.size()
+        _, sequence_length = x.size()
 
         if self.use_cache:
             p = torch.arange(

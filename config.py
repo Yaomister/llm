@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+
 @dataclass
 class Config:
     n_embedding: int = 768
@@ -25,13 +26,15 @@ class Config:
     training_epochs: int = 5000
     learning_rate: float = 3e-4
     minimum_learning_rate: float = 3e-5
-    weight_decay:int  = 0.1
-    accumulation_steps:int = 396
+    weight_decay: int = 0.1
+    accumulation_steps: int = 396
+
+    # sft parameters
+    sft_epochs = 1000
 
     # supervised fine-tuning
-    step_to_start_from: int  = 100
+    step_to_start_from: int = 100
     model_tag: str = "model.pt"
-    
 
 
 def scale(depth):
@@ -39,8 +42,6 @@ def scale(depth):
     base_dimension = depth * config.aspect_ratio
     config.n_layers = depth
     # round it so its a multiple of d_k
-    config.n_embedding = ((base_dimension + config.d_k - 1) // config.d_k)
+    config.n_embedding = (base_dimension + config.d_k - 1) // config.d_k
     config.n_head = config.n_embedding // config.n_head
     return config
-
-    

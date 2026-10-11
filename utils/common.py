@@ -1,4 +1,25 @@
+import os
 import torch
+import numpy as np
+
+
+def print0(content="", **kwargs):
+    if os.environ.get("RANK", 0) == 0:
+        print(content)
+
+
+def tokenize_dataset(tokenizer, dir, training_dataset_dir, validation_dataset_dir):
+    with open(dir, "r") as f:
+        raw_text = f.read()
+
+    ids = tokenizer.encode(raw_text)
+
+    print0(f"{len(raw_text)} characters to {len(ids)} tokens")
+
+    split = int(len(ids) * 0.8)
+
+    np.array(ids[:split], dtype=np.uint16).tofile(training_dataset_dir)
+    np.array(ids[split:], dtype=np.uint16).tofile(validation_dataset_dir)
 
 
 def get_device_type():
